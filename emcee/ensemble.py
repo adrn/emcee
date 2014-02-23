@@ -193,13 +193,16 @@ class EnsembleSampler(Sampler):
 
         # Here, we resize chain in advance for performance. This actually
         # makes a pretty big difference.
-        if storechain:
-            N = int(iterations / thin)
+        N = int(iterations / thin)
+        if storechain and i0 > 0:
             self._chain = np.concatenate((self._chain,
                                           np.zeros((self.k, N, self.dim))),
                                          axis=1)
             self._lnprob = np.concatenate((self._lnprob,
                                            np.zeros((self.k, N))), axis=1)
+        else:
+            self._chain = np.zeros((self.k, N, self.dim))
+            self._lnprob = np.zeros((self.k, N))
 
         for i in range(int(iterations)):
             self.iterations += 1
