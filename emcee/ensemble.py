@@ -345,14 +345,12 @@ class EnsembleSampler(Sampler):
 
         """
         if pos is None:
-            p = self.pos
-        else:
-            p = pos
+            pos = self.pos
 
         # Check that the parameters are in physical ranges.
-        if np.any(np.isinf(p)):
+        if np.any(np.isinf(pos)):
             raise ValueError("At least one parameter value was infinite.")
-        if np.any(np.isnan(p)):
+        if np.any(np.isnan(pos)):
             raise ValueError("At least one parameter value was NaN.")
 
         # If the `pool` property of the sampler has been set (i.e. we want
@@ -364,7 +362,7 @@ class EnsembleSampler(Sampler):
             M = map
 
         # Run the log-probability calculations (optionally in parallel).
-        results = list(M(self.lnprobfn, [p[i] for i in range(len(p))]))
+        results = list(M(self.lnprobfn, pos))
 
         try:
             lnprob = np.array([float(l[0]) for l in results])
