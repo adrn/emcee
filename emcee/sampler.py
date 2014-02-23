@@ -12,12 +12,6 @@ __all__ = ["Sampler"]
 
 import numpy as np
 
-try:
-    import acor
-    acor = acor
-except ImportError:
-    acor = None
-
 
 class Sampler(object):
     """
@@ -32,14 +26,19 @@ class Sampler(object):
         position.
 
     :param args: (optional)
-        A list of extra arguments for ``lnpostfn``. ``lnpostfn`` will be
-        called with the sequence ``lnpostfn(p, *args)``.
+        A list of extra positional arguments for ``lnpostfn``. ``lnpostfn``
+        will be called with the sequence ``lnpostfn(p, *args, **kwargs)``.
+
+    :param kwargs: (optional)
+        A list of extra keyword arguments for ``lnpostfn``. ``lnpostfn``
+        will be called with the sequence ``lnpostfn(p, *args, **kwargs)``.
 
     """
-    def __init__(self, dim, lnprobfn, args=[]):
+    def __init__(self, dim, lnprobfn, args=[], kwargs={}):
         self.dim = dim
         self.lnprobfn = lnprobfn
         self.args = args
+        self.kwargs = kwargs
 
         # This is a random number generator that we can easily set the state
         # of without affecting the numpy-wide generator
@@ -106,19 +105,15 @@ class Sampler(object):
 
     @property
     def acor(self):
-        """
-        The autocorrelation time of each parameter in the chain (length:
-        ``dim``) as estimated by the ``acor`` module.
+        return self.get_autocorr_time()
 
-        """
-        if acor is None:
-            raise ImportError("You need to install acor: "
-                              "https://github.com/dfm/acor")
-        return acor.acor(self._chain.T)[0]
+    def get_autocorr_time(self, window=50):
+        raise NotImplementedError("The acor method must be implemented "
+                                  "by subclasses")
 
     def get_lnprob(self, p):
         """Return the log-probability at the given position."""
-        return self.lnprobfn(p, *self.args)
+        return self.lnprobfn(p, *self.args, **self.kwargs)
 
     def reset(self):
         """
@@ -140,7 +135,7 @@ class Sampler(object):
         """
         Iterate :func:`sample` for ``N`` iterations and return the result.
 
-        :param p0:
+        :param pos0:
             The initial position vector.
 
         :param N:

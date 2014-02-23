@@ -6,38 +6,41 @@ from __future__ import (division, print_function, absolute_import,
 
 __all__ = ["PTSampler"]
 
-try:
-    import acor
-    acor = acor
-except ImportError:
-    acor = None
-
-from .sampler import Sampler
-import multiprocessing as multi
 import numpy as np
 import numpy.random as nr
+import multiprocessing as multi
+
+from . import autocorr
+from .sampler import Sampler
 
 
 class PTLikePrior(object):
-    """Wrapper class for logl and logp.
+    """
+    Wrapper class for logl and logp.
 
     """
 
-    def __init__(self, logl, logp):
+    def __init__(self, logl, logp, loglargs=[], logpargs=[], loglkwargs={},
+                 logpkwargs={}):
         self.logl = logl
         self.logp = logp
+        self.loglargs = loglargs
+        self.logpargs = logpargs
+        self.loglkwargs = loglkwargs
+        self.logpkwargs = logpkwargs
 
     def __call__(self, x):
-        lp = self.logp(x)
+        lp = self.logp(x, *self.logpargs, **self.logpkwargs)
 
         if lp == float('-inf'):
             return lp, lp
 
-        return self.logl(x), lp
+        return self.logl(x, *self.loglargs, **self.loglkwargs), lp
 
 
 class PTSampler(Sampler):
-    """A parallel-tempered ensemble sampler, using :class:`EnsembleSampler`
+    """
+    A parallel-tempered ensemble sampler, using :class:`EnsembleSampler`
     for sampling within each parallel chain.
 
     :param ntemps:
@@ -72,12 +75,29 @@ class PTSampler(Sampler):
     :param a: (optional)
         Proposal scale factor.
 
+    :param loglargs: (optional)
+        Positional arguments for the log-likelihood function.
+
+    :param logpargs: (optional)
+        Positional arguments for the log-prior function.
+
+    :param loglkwargs: (optional)
+        Keyword arguments for the log-likelihood function.
+
+    :param logpkwargs: (optional)
+        Keyword arguments for the log-prior function.
+
     """
     def __init__(self, ntemps, nwalkers, dim, logl, logp, threads=1,
-                 pool=None, betas=None, a=2.0):
+                 pool=None, betas=None, a=2.0, loglargs=[], logpargs=[],
+                 loglkwargs={}, logpkwargs={}):
         self.logl = logl
         self.logp = logp
         self.a = a
+        self.loglargs = loglargs
+        self.logpargs = logpargs
+        self.loglkwargs = loglkwargs
+        self.logpkwargs = logpkwargs
 
         self.ntemps = ntemps
         self.nwalkers = nwalkers
@@ -206,7 +226,8 @@ class PTSampler(Sampler):
 
         # If we have no lnprob or logls compute them
         if lnprob0 is None or lnlike0 is None:
-            fn = PTLikePrior(self.logl, self.logp)
+            fn = PTLikePrior(self.logl, self.logp, self.loglargs,
+                             self.logpargs, self.loglkwargs, self.logpkwargs)
             if self.pool is None:
                 results = list(map(fn, p.reshape((-1, self.dim))))
             else:
@@ -270,7 +291,9 @@ class PTSampler(Sampler):
                         (self.nwalkers / 2, 1)) * (pupdate[k, :, :] -
                                                    psample[k, js, :])
 
-                fn = PTLikePrior(self.logl, self.logp)
+                fn = PTLikePrior(self.logl, self.logp, self.loglargs,
+                                 self.logpargs, self.loglkwargs,
+                                 self.logpkwargs)
                 if self.pool is None:
                     results = list(map(fn, qs.reshape((-1, self.dim))))
                 else:
@@ -489,13 +512,21 @@ class PTSampler(Sampler):
         parameter in each temperature of shape ``(Ntemps, Ndim)``.
 
         """
-        if acor is None:
-            raise ImportError('acor')
-        else:
-            acors = np.zeros((self.ntemps, self.dim))
+        return self.get_autocorr_time()
 
-            for i in range(self.ntemps):
-                for j in range(self.dim):
-                    acors[i, j] = acor.acor(self._chain[i, :, :, j])[0]
+    def get_autocorr_time(self, window=50):
+        """
+        Returns a matrix of autocorrelation lengths for each
+        parameter in each temperature of shape ``(Ntemps, Ndim)``.
 
-            return acors
+        :param window: (optional)
+            The size of the windowing function. This is equivalent to the
+            maximum number of lags to use. (default: 50)
+
+        """
+        acors = np.zeros((self.ntemps, self.dim))
+
+        for i in range(self.ntemps):
+            x = np.mean(self._chain[i, :, :, :], axis=0)
+            acors[i, :] = autocorr.integrated_time(x, window=window)
+        return acors
